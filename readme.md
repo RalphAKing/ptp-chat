@@ -1,3 +1,6 @@
+THIS IS CURRENTLY ONLY LOCAL
+- Any suggestions to fix this would be appriciated 
+
 # P2P Chat with Encryption
 
 This is a Python-based peer-to-peer (P2P) chat application that allows secure communication between users over TCP, utilizing RSA encryption for message security. The application has a graphical user interface (GUI) built using Tkinter, which provides a simple and intuitive way to send encrypted messages to contacts.
@@ -76,13 +79,6 @@ pip install cryptography requests
 
 Feel free to fork the repository and submit pull requests for any improvements or bug fixes.
 
-## License
-
-This project is open-source and available under the MIT License. See `LICENSE` for more information.
-
----
-
 ## Files
 
 - `chat.py`: Main script containing the P2P chat application logic.
-- `requirements.txt`: List of Python libraries required for the application.
