@@ -81,4 +81,5 @@ Feel free to fork the repository and submit pull requests for any improvements o
 
 ## Files
 
-- `chat.py`: Main script containing the P2P chat application logic.
+- `main.py`: Main script containing the P2P chat application logic.
+- `run.bat`: Runs the py file for tesing multiple instences. 
