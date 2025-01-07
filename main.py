@@ -81,23 +81,6 @@ def decrypt_message(encrypted_message, private_key):
     ).decode()
     return decrypted
 
-
-
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-    except Exception:
-        local_ip = "127.0.0.1"
-    finally:
-        s.close()
-    return local_ip
-
-import requests
-
-
-
 def tcp_server(host, port, connection_requests):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
