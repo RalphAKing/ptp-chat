@@ -10,6 +10,28 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes
 import requests
+import ctypes
+import sys
+import subprocess
+from elevate import elevate
+
+def setup_firewall_rule(port):
+    if sys.platform == 'win32':
+        # Elevate privileges
+        elevate(graphical=False)
+        
+        # Add firewall rule using netsh
+        rule_name = f"P2PChat_{port}"
+        commands = [
+            f'netsh advfirewall firewall add rule name="{rule_name}" dir=in action=allow protocol=TCP localport={port}',
+            f'netsh advfirewall firewall add rule name="{rule_name}" dir=out action=allow protocol=TCP localport={port}'
+        ]
+        
+        for cmd in commands:
+            subprocess.run(cmd, shell=True)
+        
+        return True
+    return False
 
 def get_public_ip():
     try:
@@ -145,43 +167,88 @@ def start_gui():
     token_entry.grid(row=1, column=1, padx=5, pady=5)
 
     def add_connection():
+        import socket  # Move import to top of function
+        
+        token = token_entry.get().strip()
+        print(f"Attempting to connect using token: {token}")
+        
+        peer_username, peer_ip, peer_port, peer_protocol = decode_connection_token(token)
+        print(f"Decoded connection info - IP: {peer_ip}, Port: {peer_port}")
+        
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.settimeout(30)
+            print(f"Attempting connection to {peer_ip}:{peer_port}")
+            
+            # Check if port is open
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex((peer_ip, peer_port))
+            print(f"Port check result: {result}")
+            sock.close()
+            
+            client_socket.connect((peer_ip, peer_port))
+            print("Connection established")
+        except:
+            pass
+            
+
         token = token_entry.get().strip()
         if not token:
+            messagebox.showwarning("Input Error", "Please enter a connection token")
             return
+            
         peer_username, peer_ip, peer_port, peer_protocol = decode_connection_token(token)
-        if peer_username and peer_ip and peer_port and peer_protocol:
-            try:
-                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client_socket.connect((peer_ip, peer_port))
-                public_key_bytes = serialize_public_key(public_key).decode()
-                request = json.dumps({
-                    "type": "connection_request",
-                    "username": username,
-                    "ip": host,
-                    "port": port,
-                    "public_key": public_key_bytes 
-                })
-                client_socket.send(request.encode())
-                response = json.loads(client_socket.recv(1024).decode())
-                if response["status"] == "successful":
-                    peer_public_key = deserialize_public_key(response["public_key"].encode())
-                    contacts[peer_username] = {
-                        "ip": peer_ip,
-                        "port": peer_port,
-                        "protocol": peer_protocol,
-                        "public_key": peer_public_key  
-                    }
-                    message_history[peer_username] = []
-                    update_contacts_list()
-                    append_message(f"Connected to {peer_username}.", "System")
-                else:
-                    append_message(f"Connection denied by {peer_username}.", "System")
+        
+        if not all([peer_username, peer_ip, peer_port, peer_protocol]):
+            messagebox.showwarning("Token Error", "Invalid connection token format")
+            return
+        
+            
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.settimeout(10)  # Add timeout
+            client_socket.connect((peer_ip, peer_port))
+            
+            public_key_bytes = serialize_public_key(public_key).decode()
+            request = json.dumps({
+                "type": "connection_request",
+                "username": username,
+                "ip": get_public_ip(),  # Use public IP
+                "port": port,
+                "public_key": public_key_bytes
+            })
+            
+            client_socket.send(request.encode())
+            response = client_socket.recv(4096)
+            
+            if not response:
+                raise ConnectionError("No response received")
+                
+            response = json.loads(response.decode())
+            
+            if response["status"] == "successful":
+                peer_public_key = deserialize_public_key(response["public_key"].encode())
+                contacts[peer_username] = {
+                    "ip": peer_ip,
+                    "port": peer_port,
+                    "protocol": peer_protocol,
+                    "public_key": peer_public_key
+                }
+                message_history[peer_username] = []
+                update_contacts_list()
+                append_message(f"Connected to {peer_username}.", "System")
+                
+        except socket.timeout:
+            messagebox.showerror("Connection Error", "Connection attempt timed out")
+        except ConnectionRefusedError:
+            messagebox.showerror("Connection Error", "Connection refused by peer")
+        except Exception as e:
+            messagebox.showerror("Error", f"Connection failed: {str(e)}")
+        finally:
+            token_entry.delete(0, tk.END)
+            if 'client_socket' in locals():
                 client_socket.close()
-            except Exception as e:
-                append_message(f"Error connecting to {peer_username}: {e}", "System")
-        else:
-            messagebox.showerror("Error", "Invalid connection token.")
-        token_entry.delete(0, tk.END)
+
     tk.Button(root, text="Add", command=add_connection).grid(row=1, column=2, padx=5, pady=5)
     tk.Label(root, text="Contacts:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
     contacts_listbox = tk.Listbox(root, height=10, width=20)
@@ -285,9 +352,10 @@ def start_gui():
 
 def chat():
     global message_queue, connection_requests, contacts, message_history, username, host, port, connection_token
-    host = get_local_ip()
+    host = get_public_ip()
 
     port = random.randint(10000, 20000)
+    setup_firewall_rule(port)
     message_queue = queue.Queue()
     connection_requests = queue.Queue()
     contacts = {}
@@ -300,7 +368,7 @@ def chat():
         print("Username is required. Exiting.")
         return
     connection_token = generate_connection_token(username, host, port, "TCP")
-    threading.Thread(target=tcp_server, args=(host, port, connection_requests), daemon=True).start()
+    threading.Thread(target=tcp_server, args=("0.0.0.0", port, connection_requests), daemon=True).start()
     start_gui()
 
 if __name__ == "__main__":
